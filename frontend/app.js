@@ -270,9 +270,24 @@ document.addEventListener("DOMContentLoaded", () => {
     return `${days} day${days > 1 ? "s" : ""}`;
   }
 
+  async function addAmoyNetwork() {
+    await window.ethereum.request({
+      method: "wallet_addEthereumChain",
+      params: [
+        {
+          chainId: AMOY_CHAIN_ID_HEX,
+          chainName: "Polygon Amoy Testnet",
+          nativeCurrency: { name: "POL", symbol: "POL", decimals: 18 },
+          rpcUrls: [AMOY_RPC_URL],
+          blockExplorerUrls: [AMOY_EXPLORER],
+        },
+      ],
+    });
+  }
+
   async function switchToAmoy() {
     const currentChainId = await window.ethereum.request({ method: "eth_chainId" });
-    if (currentChainId === AMOY_CHAIN_ID_HEX) return;
+    if (String(currentChainId).toLowerCase() === AMOY_CHAIN_ID_HEX.toLowerCase()) return;
 
     try {
       await window.ethereum.request({
@@ -280,22 +295,24 @@ document.addEventListener("DOMContentLoaded", () => {
         params: [{ chainId: AMOY_CHAIN_ID_HEX }],
       });
     } catch (error) {
-      if (error.code === 4902) {
-        await window.ethereum.request({
-          method: "wallet_addEthereumChain",
-          params: [
-            {
-              chainId: AMOY_CHAIN_ID_HEX,
-              chainName: "Polygon Amoy Testnet",
-              nativeCurrency: { name: "POL", symbol: "POL", decimals: 18 },
-              rpcUrls: [AMOY_RPC_URL],
-              blockExplorerUrls: [AMOY_EXPLORER],
-            },
-          ],
-        });
-      } else {
+      const message = String(error?.message || "").toLowerCase();
+      const shouldAddNetwork =
+        error?.code === 4902 ||
+        error?.data?.originalError?.code === 4902 ||
+        message.includes("unrecognized chain") ||
+        message.includes("unknown chain") ||
+        message.includes("not been added");
+
+      if (!shouldAddNetwork) {
         throw error;
       }
+
+      await addAmoyNetwork();
+
+      await window.ethereum.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: AMOY_CHAIN_ID_HEX }],
+      });
     }
   }
 
