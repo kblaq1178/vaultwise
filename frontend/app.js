@@ -5,98 +5,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const USDC_ADDRESS = "0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582";
   const AMOY_CHAIN_ID_DECIMAL = 80002;
   const AMOY_CHAIN_ID_HEX = "0x13882";
-  const AMOY_RPC_URL = "https://rpc-amoy.polygon.technology";
-  const AMOY_EXPLORER = "https://amoy.polygonscan.com";
+  const AMOY_RPC = "https://rpc-amoy.polygon.technology";
 
-  const FALLBACK_VAULTWISE_ABI = [
-    {
-      type: "function",
-      name: "createVault",
-      inputs: [
-        { name: "goalAmount", type: "uint256" },
-        { name: "duration", type: "uint256" },
-      ],
-      outputs: [{ name: "vaultId", type: "uint256" }],
-      stateMutability: "nonpayable",
-    },
-    {
-      type: "function",
-      name: "deposit",
-      inputs: [
-        { name: "vaultId", type: "uint256" },
-        { name: "amount", type: "uint256" },
-      ],
-      outputs: [],
-      stateMutability: "nonpayable",
-    },
-    {
-      type: "function",
-      name: "invest",
-      inputs: [{ name: "vaultId", type: "uint256" }],
-      outputs: [],
-      stateMutability: "nonpayable",
-    },
-    {
-      type: "function",
-      name: "withdraw",
-      inputs: [
-        { name: "vaultId", type: "uint256" },
-        { name: "amount", type: "uint256" },
-      ],
-      outputs: [],
-      stateMutability: "nonpayable",
-    },
-    {
-      type: "function",
-      name: "getVault",
-      inputs: [{ name: "vaultId", type: "uint256" }],
-      outputs: [
-        {
-          name: "",
-          type: "tuple",
-          components: [
-            { name: "owner", type: "address" },
-            { name: "goalAmount", type: "uint256" },
-            { name: "balance", type: "uint256" },
-            { name: "createdAt", type: "uint256" },
-            { name: "duration", type: "uint256" },
-            { name: "invested", type: "bool" },
-            { name: "exists", type: "bool" },
-          ],
-        },
-      ],
-      stateMutability: "view",
-    },
-    {
-      type: "function",
-      name: "getUserVaults",
-      inputs: [{ name: "user", type: "address" }],
-      outputs: [{ name: "", type: "uint256[]" }],
-      stateMutability: "view",
-    },
-    {
-      type: "event",
-      name: "VaultCreated",
-      inputs: [
-        { name: "owner", type: "address", indexed: true },
-        { name: "vaultId", type: "uint256", indexed: true },
-        { name: "goalAmount", type: "uint256", indexed: false },
-        { name: "duration", type: "uint256", indexed: false },
-      ],
-    },
-  ];
-
-  const FALLBACK_USDC_ABI = [
-    {
-      type: "function",
-      name: "approve",
-      inputs: [
-        { name: "spender", type: "address" },
-        { name: "amount", type: "uint256" },
-      ],
-      outputs: [{ name: "", type: "bool" }],
-      stateMutability: "nonpayable",
-    },
+  const EXTRA_USDC_ABI = [
     {
       type: "function",
       name: "allowance",
@@ -104,13 +15,6 @@ document.addEventListener("DOMContentLoaded", () => {
         { name: "owner", type: "address" },
         { name: "spender", type: "address" },
       ],
-      outputs: [{ name: "", type: "uint256" }],
-      stateMutability: "view",
-    },
-    {
-      type: "function",
-      name: "balanceOf",
-      inputs: [{ name: "account", type: "address" }],
       outputs: [{ name: "", type: "uint256" }],
       stateMutability: "view",
     },
@@ -124,33 +28,19 @@ document.addEventListener("DOMContentLoaded", () => {
       outputs: [{ name: "", type: "bool" }],
       stateMutability: "nonpayable",
     },
-    {
-      type: "function",
-      name: "decimals",
-      inputs: [],
-      outputs: [{ name: "", type: "uint8" }],
-      stateMutability: "view",
-    },
   ];
 
-  function getVaultWiseAbi() {
-    return typeof VAULTWISE_ABI !== "undefined" ? VAULTWISE_ABI : FALLBACK_VAULTWISE_ABI;
-  }
+  const FULL_USDC_ABI =
+    typeof USDC_ABI !== "undefined" ? [...USDC_ABI, ...EXTRA_USDC_ABI] : EXTRA_USDC_ABI;
 
-  function getUsdcAbi() {
-    const baseAbi = typeof USDC_ABI !== "undefined" ? USDC_ABI : FALLBACK_USDC_ABI;
-    const extendedAbi = [...baseAbi];
-
-    if (!extendedAbi.some((item) => item.name === "allowance")) {
-      extendedAbi.push(FALLBACK_USDC_ABI.find((item) => item.name === "allowance"));
-    }
-
-    if (!extendedAbi.some((item) => item.name === "transfer")) {
-      extendedAbi.push(FALLBACK_USDC_ABI.find((item) => item.name === "transfer"));
-    }
-
-    return extendedAbi;
-  }
+  let provider = null;
+  let signer = null;
+  let vaultWise = null;
+  let usdc = null;
+  let connectedWallet = null;
+  let username = localStorage.getItem("vaultwiseUsername");
+  let savedAvatar = localStorage.getItem("vaultwiseAvatar");
+  let isBalanceHidden = false;
 
   const landingPage = document.getElementById("landingPage");
   const appContainer = document.getElementById("appContainer");
@@ -187,19 +77,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const createVaultModal = document.getElementById("createVaultModal");
   const openCreateVaultModal = document.getElementById("openCreateVaultModal");
   const closeCreateVaultModal = document.getElementById("closeCreateVaultModal");
-  const createVaultBtn = document.getElementById("createVaultBtn");
   const cancelCreateVaultBtn = document.getElementById("cancelCreateVaultBtn");
-
-  let username = localStorage.getItem("vaultwiseUsername");
-  let savedAvatar = localStorage.getItem("vaultwiseAvatar");
-  let connectedWallet = null;
-  let provider = null;
-  let signer = null;
-  let vaultWise = null;
-  let usdc = null;
-  let isBalanceHidden = false;
-  let onChainVaults = [];
-  let vaultMeta = JSON.parse(localStorage.getItem("vaultwiseVaultMeta")) || {};
+  const createVaultBtn = document.getElementById("createVaultBtn");
 
   function getDefaultAvatar(name = "User") {
     return `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=ffffff&color=000000`;
@@ -207,18 +86,26 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function setUserUI(name, avatarUrl) {
     const displayName = "@" + name;
+
     if (desktopUser) desktopUser.innerText = displayName;
     if (mobileUser) mobileUser.innerText = displayName;
     if (profileUsername) profileUsername.innerText = displayName;
+
     userAvatars.forEach((avatar) => {
       avatar.src = avatarUrl || getDefaultAvatar(name);
     });
   }
 
+  function shortAddress(address) {
+    if (!address) return "Not connected";
+    return address.slice(0, 6) + "..." + address.slice(-4);
+  }
+
   function showDashboard() {
     if (landingPage) landingPage.style.display = "none";
+    if (usernameModal) usernameModal.classList.add("hidden");
     if (appContainer) appContainer.classList.remove("hidden");
-    renderVaults();
+    loadUserVaults();
   }
 
   function showLanding() {
@@ -226,69 +113,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (appContainer) appContainer.classList.add("hidden");
   }
 
-  function shortAddress(address) {
-    if (!address) return "";
-    return address.slice(0, 6) + "..." + address.slice(-4);
-  }
-
-  function metaKey(wallet, vaultId) {
-    return `${wallet.toLowerCase()}-${vaultId.toString()}`;
-  }
-
-  function saveVaultMeta() {
-    localStorage.setItem("vaultwiseVaultMeta", JSON.stringify(vaultMeta));
-  }
-
-  function formatUSDC(value) {
-    return Number(ethers.formatUnits(value || 0n, 6));
-  }
-
-  function parseUSDC(value) {
-    return ethers.parseUnits(String(value || "0"), 6);
-  }
-
-  function durationToSeconds(text) {
-    const clean = String(text).toLowerCase().trim();
-    const match = clean.match(/(\d+(?:\.\d+)?)\s*(day|days|week|weeks|month|months|year|years|hour|hours)?/);
-    if (!match) return 30 * 24 * 60 * 60;
-
-    const amount = Number(match[1]);
-    const unit = match[2] || "days";
-
-    if (unit.startsWith("hour")) return Math.floor(amount * 60 * 60);
-    if (unit.startsWith("week")) return Math.floor(amount * 7 * 24 * 60 * 60);
-    if (unit.startsWith("month")) return Math.floor(amount * 30 * 24 * 60 * 60);
-    if (unit.startsWith("year")) return Math.floor(amount * 365 * 24 * 60 * 60);
-    return Math.floor(amount * 24 * 60 * 60);
-  }
-
-  function secondsToDuration(secondsValue) {
-    const seconds = Number(secondsValue || 0n);
-    const days = Math.max(Math.round(seconds / 86400), 1);
-    if (days >= 365) return `${Math.round(days / 365)} year${Math.round(days / 365) > 1 ? "s" : ""}`;
-    if (days >= 30) return `${Math.round(days / 30)} month${Math.round(days / 30) > 1 ? "s" : ""}`;
-    if (days >= 7) return `${Math.round(days / 7)} week${Math.round(days / 7) > 1 ? "s" : ""}`;
-    return `${days} day${days > 1 ? "s" : ""}`;
-  }
-
-  async function addAmoyNetwork() {
-    await window.ethereum.request({
-      method: "wallet_addEthereumChain",
-      params: [
-        {
-          chainId: AMOY_CHAIN_ID_HEX,
-          chainName: "Polygon Amoy Testnet",
-          nativeCurrency: { name: "POL", symbol: "POL", decimals: 18 },
-          rpcUrls: [AMOY_RPC_URL],
-          blockExplorerUrls: [AMOY_EXPLORER],
-        },
-      ],
-    });
-  }
-
   async function switchToAmoy() {
-    const currentChainId = await window.ethereum.request({ method: "eth_chainId" });
-    if (String(currentChainId).toLowerCase() === AMOY_CHAIN_ID_HEX.toLowerCase()) return;
+    if (!window.ethereum) return;
 
     try {
       await window.ethereum.request({
@@ -296,50 +122,53 @@ document.addEventListener("DOMContentLoaded", () => {
         params: [{ chainId: AMOY_CHAIN_ID_HEX }],
       });
     } catch (error) {
-      const message = String(error?.message || "").toLowerCase();
-      const shouldAddNetwork =
-        error?.code === 4902 ||
-        error?.data?.originalError?.code === 4902 ||
-        message.includes("unrecognized chain") ||
-        message.includes("unknown chain") ||
-        message.includes("not been added");
+      if (
+        error.code === 4902 ||
+        error.message?.includes("Unrecognized chain ID") ||
+        error.message?.includes("wallet_addEthereumChain")
+      ) {
+        await window.ethereum.request({
+          method: "wallet_addEthereumChain",
+          params: [
+            {
+              chainId: AMOY_CHAIN_ID_HEX,
+              chainName: "Polygon Amoy Testnet",
+              nativeCurrency: {
+                name: "POL",
+                symbol: "POL",
+                decimals: 18,
+              },
+              rpcUrls: [AMOY_RPC],
+              blockExplorerUrls: ["https://amoy.polygonscan.com"],
+            },
+          ],
+        });
 
-      if (!shouldAddNetwork) {
+        await window.ethereum.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: AMOY_CHAIN_ID_HEX }],
+        });
+      } else {
         throw error;
       }
-
-      await addAmoyNetwork();
-
-      await window.ethereum.request({
-        method: "wallet_switchEthereumChain",
-        params: [{ chainId: AMOY_CHAIN_ID_HEX }],
-      });
     }
   }
 
-  async function initContracts() {
+  async function setupContracts() {
     provider = new ethers.BrowserProvider(window.ethereum);
     signer = await provider.getSigner();
-    const network = await provider.getNetwork();
-
-    if (Number(network.chainId) !== AMOY_CHAIN_ID_DECIMAL) {
-      await switchToAmoy();
-      provider = new ethers.BrowserProvider(window.ethereum);
-      signer = await provider.getSigner();
-    }
-
     connectedWallet = await signer.getAddress();
-    vaultWise = new ethers.Contract(VAULTWISE_ADDRESS, getVaultWiseAbi(), signer);
-    usdc = new ethers.Contract(USDC_ADDRESS, getUsdcAbi(), signer);
+
+    vaultWise = new ethers.Contract(VAULTWISE_ADDRESS, VAULTWISE_ABI, signer);
+    usdc = new ethers.Contract(USDC_ADDRESS, FULL_USDC_ABI, signer);
   }
 
   async function updateWalletBalance(wallet) {
     try {
-      if (!window.ethereum || !ethers || !provider) return;
+      if (!window.ethereum || !ethers || !wallet) return;
+
       const balance = await provider.getBalance(wallet);
       const formattedBalance = Number(ethers.formatEther(balance)).toFixed(4);
-      const usdcBalance = usdc ? await usdc.balanceOf(wallet) : 0n;
-      const formattedUsdc = formatUSDC(usdcBalance).toFixed(2);
 
       if (balanceAmount) {
         balanceAmount.textContent = `${formattedBalance} POL`;
@@ -347,91 +176,34 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       if (balanceChange) {
-        balanceChange.textContent = `${formattedUsdc} USDC available`;
-        balanceChange.dataset.real = `${formattedUsdc} USDC available`;
+        balanceChange.textContent = "Live wallet balance";
+        balanceChange.dataset.real = "Live wallet balance";
       }
     } catch (error) {
       console.error("Balance fetch failed:", error);
     }
   }
 
-  async function loadUserVaults() {
-    if (!vaultWise || !connectedWallet) {
-      onChainVaults = [];
-      renderVaults();
-      return;
-    }
-
-    try {
-      vaultGrid.innerHTML = `
-        <div class="create-vault-placeholder loading">
-          <div class="create-vault-inner">
-            <span><i data-lucide="loader-circle"></i></span>
-            <h3>Loading Vaults</h3>
-            <p>Reading your vaults from Polygon Amoy</p>
-          </div>
-        </div>
-      `;
-      lucide.createIcons();
-
-      const vaultIds = await vaultWise.getUserVaults(connectedWallet);
-      const vaultData = await Promise.all(
-        vaultIds.map(async (id) => {
-          const vault = await vaultWise.getVault(id);
-          const key = metaKey(connectedWallet, id);
-          const meta = vaultMeta[key] || {};
-
-          return {
-            id,
-            owner: vault.owner,
-            name: meta.name || `Vault #${id.toString()}`,
-            goalAmount: vault.goalAmount,
-            currentAmount: vault.balance,
-            createdAt: vault.createdAt,
-            duration: vault.duration,
-            durationLabel: meta.durationLabel || secondsToDuration(vault.duration),
-            invested: vault.invested,
-            exists: vault.exists,
-          };
-        })
-      );
-
-      onChainVaults = vaultData.filter((vault) => vault.exists);
-      renderVaults();
-    } catch (error) {
-      console.error("Vault loading failed:", error);
-      vaultGrid.innerHTML = `
-        <div class="create-vault-placeholder" id="emptyCreateVaultBtn">
-          <div class="create-vault-inner">
-            <span><i data-lucide="alert-circle"></i></span>
-            <h3>Could not load vaults</h3>
-            <p>Check your network and try again</p>
-          </div>
-        </div>
-      `;
-      document.getElementById("emptyCreateVaultBtn")?.addEventListener("click", openCreateVault);
-      lucide.createIcons();
-    }
-  }
-
-  async function showConnectedUI(wallet) {
+  function showConnectedUI(wallet) {
     connectedWallet = wallet;
 
-    connectWalletBtns.forEach((btn) => btn.classList.add("hidden"));
+    connectWalletBtns.forEach((btn) => {
+      btn.classList.add("hidden");
+    });
+
     if (walletBox) walletBox.classList.remove("hidden");
     if (walletShortText) walletShortText.innerText = shortAddress(wallet);
     if (profileWalletText) profileWalletText.innerText = shortAddress(wallet);
     if (modalWalletText) modalWalletText.innerText = `Connected: ${shortAddress(wallet)}`;
 
-    await updateWalletBalance(wallet);
+    updateWalletBalance(wallet);
 
     if (!username) {
       if (landingPage) landingPage.style.display = "none";
-      usernameModal.classList.remove("hidden");
+      if (usernameModal) usernameModal.classList.remove("hidden");
     } else {
       setUserUI(username, savedAvatar || getDefaultAvatar(username));
       showDashboard();
-      await loadUserVaults();
     }
 
     lucide.createIcons();
@@ -443,7 +215,6 @@ document.addEventListener("DOMContentLoaded", () => {
     signer = null;
     vaultWise = null;
     usdc = null;
-    onChainVaults = [];
 
     connectWalletBtns.forEach((btn) => {
       btn.classList.remove("hidden");
@@ -465,53 +236,79 @@ document.addEventListener("DOMContentLoaded", () => {
       balanceChange.dataset.real = "Connect wallet to view balance";
     }
 
-    renderVaults();
+    renderVaults([]);
     lucide.createIcons();
   }
 
   async function connectWallet() {
     if (typeof window.ethereum === "undefined") {
-      alert("MetaMask not detected. Please install MetaMask or use the MetaMask browser.");
+      alert("MetaMask not detected. Please install MetaMask or use a wallet browser.");
       return;
     }
 
     try {
       await switchToAmoy();
-      await window.ethereum.request({ method: "eth_requestAccounts" });
-      await initContracts();
-      await showConnectedUI(connectedWallet);
+
+      const accounts = await window.ethereum.request({
+        method: "eth_requestAccounts",
+      });
+
+      await setupContracts();
+
+      showConnectedUI(accounts[0]);
     } catch (error) {
       console.error(error);
-      alert(error?.shortMessage || error?.message || "Wallet connection failed or rejected.");
+      alert(error.shortMessage || error.message || "Wallet connection failed or rejected.");
     }
   }
 
   function openCreateVault() {
     if (!connectedWallet) {
-      connectWallet();
+      alert("Please connect your wallet first.");
       return;
     }
 
-    if (createVaultModal) createVaultModal.classList.remove("hidden");
+    if (createVaultModal) {
+      createVaultModal.classList.remove("hidden");
+    }
   }
 
   function closeCreateVault() {
-    if (!createVaultModal) return;
+    if (createVaultModal) createVaultModal.classList.add("hidden");
 
-    createVaultModal.classList.add("hidden");
-
-    const nameInput = document.getElementById("vaultNameInput");
-    const goalInput = document.getElementById("goalAmountInput");
-    const currentInput = document.getElementById("currentAmountInput");
+    const vaultNameInput = document.getElementById("vaultNameInput");
+    const goalAmountInput = document.getElementById("goalAmountInput");
+    const currentAmountInput = document.getElementById("currentAmountInput");
     const durationInput = document.getElementById("durationInput");
 
-    if (nameInput) nameInput.value = "";
-    if (goalInput) goalInput.value = "";
-    if (currentInput) currentInput.value = "";
+    if (vaultNameInput) vaultNameInput.value = "";
+    if (goalAmountInput) goalAmountInput.value = "";
+    if (currentAmountInput) currentAmountInput.value = "";
     if (durationInput) durationInput.value = "";
   }
 
-  function renderVaults() {
+  function parseDurationToSeconds(durationText) {
+    const clean = durationText.toLowerCase().trim();
+    const number = parseInt(clean.match(/\d+/)?.[0] || "30", 10);
+
+    if (clean.includes("year")) return number * 365 * 24 * 60 * 60;
+    if (clean.includes("month")) return number * 30 * 24 * 60 * 60;
+    if (clean.includes("week")) return number * 7 * 24 * 60 * 60;
+    if (clean.includes("day")) return number * 24 * 60 * 60;
+
+    return 30 * 24 * 60 * 60;
+  }
+
+  function formatDuration(seconds) {
+    const days = Math.floor(Number(seconds) / 86400);
+
+    if (days >= 365) return `${Math.floor(days / 365)} year(s)`;
+    if (days >= 30) return `${Math.floor(days / 30)} month(s)`;
+    if (days >= 7) return `${Math.floor(days / 7)} week(s)`;
+    return `${days || 1} day(s)`;
+  }
+
+  function renderVaults(vaults = []) {
     if (!vaultGrid) return;
 
     if (!connectedWallet) {
@@ -520,205 +317,195 @@ document.addEventListener("DOMContentLoaded", () => {
           <div class="create-vault-inner">
             <span><i data-lucide="plus"></i></span>
             <h3>Create Vault</h3>
-            <p>Connect wallet to create your first vault</p>
+            <p>Connect wallet to create vault</p>
           </div>
         </div>
       `;
+
       document.getElementById("emptyCreateVaultBtn")?.addEventListener("click", openCreateVault);
       lucide.createIcons();
       return;
     }
 
-    if (onChainVaults.length === 0) {
+    if (vaults.length === 0) {
       vaultGrid.innerHTML = `
         <div class="create-vault-placeholder" id="emptyCreateVaultBtn">
           <div class="create-vault-inner">
             <span><i data-lucide="plus"></i></span>
             <h3>Create Vault</h3>
-            <p>Create your first on-chain USDC vault</p>
+            <p>Create your first savings vault</p>
           </div>
         </div>
       `;
+
       document.getElementById("emptyCreateVaultBtn")?.addEventListener("click", openCreateVault);
       lucide.createIcons();
       return;
     }
 
-    vaultGrid.innerHTML = onChainVaults
-      .map((vault) => {
-        const goal = formatUSDC(vault.goalAmount);
-        const balance = formatUSDC(vault.currentAmount);
-        const progress = goal > 0 ? (balance / goal) * 100 : 0;
-        const remaining = Math.max(goal - balance, 0);
-        const statusText = vault.invested ? "Invested" : "Active";
-        const statusClass = vault.invested ? "invested" : "pending";
+    vaultGrid.innerHTML = "";
 
-        return `
-          <div class="vault-card" data-vault-id="${vault.id.toString()}">
-            <div class="vault-head">
-              <div class="vault-icon">
-                <i data-lucide="badge-dollar-sign"></i>
-              </div>
+    vaults.forEach((vault) => {
+      const goalAmount = Number(ethers.formatUnits(vault.goalAmount, 6));
+      const currentAmount = Number(ethers.formatUnits(vault.balance, 6));
+      const progress = goalAmount > 0 ? (currentAmount / goalAmount) * 100 : 0;
+      const remaining = Math.max(goalAmount - currentAmount, 0);
+      const duration = formatDuration(vault.duration);
+      const status = vault.invested ? "Invested" : "Active";
 
-              <div>
-                <h3>${vault.name} <span class="status-pill ${statusClass}">${statusText}</span></h3>
-                <p>Main Vault • ${vault.durationLabel}</p>
-              </div>
+      vaultGrid.innerHTML += `
+        <div class="vault-card">
+          <div class="vault-head">
+            <div class="vault-icon">
+              <i data-lucide="badge-dollar-sign"></i>
             </div>
 
-            <div class="vault-info">
-              <div>
-                <small>Savings Goal</small>
-                <h4>$${goal.toFixed(2)}</h4>
-              </div>
-
-              <div>
-                <small>Current Amount</small>
-                <h4 class="blue">$${balance.toFixed(2)}</h4>
-              </div>
-            </div>
-
-            <div class="progress-row">
-              <small>Progress</small>
-              <small>${progress.toFixed(2)}%</small>
-            </div>
-
-            <div class="progress">
-              <span style="width: ${Math.min(progress, 100)}%"></span>
-            </div>
-
-            <small>$${remaining.toFixed(2)} to go</small>
-
-            <div class="vault-actions">
-              <button class="deposit-vault-btn" data-vault-id="${vault.id.toString()}">Deposit</button>
-              <button class="invest-vault-btn" data-vault-id="${vault.id.toString()}" ${vault.invested || balance <= 0 ? "disabled" : ""}>Invest</button>
-              <button class="withdraw-vault-btn" data-vault-id="${vault.id.toString()}" ${balance <= 0 ? "disabled" : ""}>Withdraw</button>
+            <div>
+              <h3>Vault #${vault.id} <span>${status}</span></h3>
+              <p>Main Vault • ${duration}</p>
             </div>
           </div>
-        `;
-      })
-      .join("");
 
-    vaultGrid.insertAdjacentHTML(
-      "beforeend",
-      `
-        <div class="create-vault-placeholder" id="emptyCreateVaultBtn">
-          <div class="create-vault-inner">
-            <span><i data-lucide="plus"></i></span>
-            <h3>Create Vault</h3>
-            <p>Add another savings vault</p>
+          <div class="vault-info">
+            <div>
+              <small>Savings Goal</small>
+              <h4>$${goalAmount.toFixed(2)}</h4>
+            </div>
+
+            <div>
+              <small>Current Amount</small>
+              <h4 class="blue">$${currentAmount.toFixed(2)}</h4>
+            </div>
           </div>
+
+          <div class="progress-row">
+            <small>Progress</small>
+            <small>${progress.toFixed(2)}%</small>
+          </div>
+
+          <div class="progress">
+            <span style="width: ${Math.min(progress, 100)}%"></span>
+          </div>
+
+          <small>$${remaining.toFixed(2)} to go</small>
+
+          <button class="details-btn vault-action-btn" data-vault-id="${vault.id}">
+            View vault details <i data-lucide="chevron-right"></i>
+          </button>
         </div>
-      `
-    );
-
-    document.getElementById("emptyCreateVaultBtn")?.addEventListener("click", openCreateVault);
-
-    document.querySelectorAll(".deposit-vault-btn").forEach((btn) => {
-      btn.addEventListener("click", () => depositToVault(btn.dataset.vaultId));
+      `;
     });
 
-    document.querySelectorAll(".invest-vault-btn").forEach((btn) => {
-      btn.addEventListener("click", () => investVault(btn.dataset.vaultId));
-    });
-
-    document.querySelectorAll(".withdraw-vault-btn").forEach((btn) => {
-      btn.addEventListener("click", () => withdrawFromVault(btn.dataset.vaultId));
+    document.querySelectorAll(".vault-action-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        openVaultActions(btn.dataset.vaultId);
+      });
     });
 
     lucide.createIcons();
   }
 
-  async function ensureReady() {
-    if (!connectedWallet || !vaultWise || !usdc) {
-      await connectWallet();
-    }
-
-    if (!connectedWallet || !vaultWise || !usdc) {
-      throw new Error("Wallet is not connected.");
-    }
-  }
-
-  async function approveIfNeeded(amount) {
-    const allowance = await usdc.allowance(connectedWallet, VAULTWISE_ADDRESS);
-    if (allowance >= amount) return;
-
-    const approveTx = await usdc.approve(VAULTWISE_ADDRESS, amount);
-    await approveTx.wait();
-  }
-
-  async function createVaultOnChain() {
-    const nameInput = document.getElementById("vaultNameInput");
-    const goalInput = document.getElementById("goalAmountInput");
-    const currentInput = document.getElementById("currentAmountInput");
-    const durationInput = document.getElementById("durationInput");
-
-    const name = nameInput.value.trim();
-    const goalAmount = Number(goalInput.value);
-    const initialDeposit = Number(currentInput.value || 0);
-    const durationText = durationInput.value.trim();
-
-    if (!name || !goalAmount || !durationText) {
-      alert("Please fill in vault name, goal amount, and duration.");
-      return;
-    }
-
-    if (goalAmount <= 0 || initialDeposit < 0) {
-      alert("Enter a valid goal amount and initial deposit.");
+  async function loadUserVaults() {
+    if (!vaultWise || !connectedWallet) {
+      renderVaults([]);
       return;
     }
 
     try {
-      await ensureReady();
-      createVaultBtn.disabled = true;
-      createVaultBtn.innerText = "Creating vault...";
+      vaultGrid.innerHTML = `<p class="loading-vaults">Loading your vaults...</p>`;
 
-      const goal = parseUSDC(goalAmount);
-      const durationSeconds = BigInt(durationToSeconds(durationText));
-      const tx = await vaultWise.createVault(goal, durationSeconds);
-      const receipt = await tx.wait();
+      const ids = await vaultWise.getUserVaults(connectedWallet);
+      const vaults = [];
 
-      let newVaultId = null;
-      for (const log of receipt.logs) {
+      for (const id of ids) {
         try {
-          const parsed = vaultWise.interface.parseLog(log);
-          if (parsed && parsed.name === "VaultCreated") {
-            newVaultId = parsed.args.vaultId;
-            break;
-          }
-        } catch (_) {}
+          const vault = await vaultWise.getVault(id);
+          vaults.push({
+            id: id.toString(),
+            owner: vault.owner,
+            goalAmount: vault.goalAmount,
+            balance: vault.balance,
+            createdAt: vault.createdAt,
+            duration: vault.duration,
+            invested: vault.invested,
+            exists: vault.exists,
+          });
+        } catch (error) {
+          console.error("Failed to load vault:", id.toString(), error);
+        }
       }
 
-      if (newVaultId === null) {
-        const ids = await vaultWise.getUserVaults(connectedWallet);
-        newVaultId = ids[ids.length - 1];
+      renderVaults(vaults);
+    } catch (error) {
+      console.error("Load vaults error:", error);
+      vaultGrid.innerHTML = `
+        <div class="create-vault-placeholder" id="emptyCreateVaultBtn">
+          <div class="create-vault-inner">
+            <span><i data-lucide="plus"></i></span>
+            <h3>Create Vault</h3>
+            <p>Could not load vaults. Try refreshing.</p>
+          </div>
+        </div>
+      `;
+
+      document.getElementById("emptyCreateVaultBtn")?.addEventListener("click", openCreateVault);
+      lucide.createIcons();
+    }
+  }
+
+  async function createVaultOnChain() {
+    const name = document.getElementById("vaultNameInput").value.trim();
+    const goalAmountValue = document.getElementById("goalAmountInput").value;
+    const durationValue = document.getElementById("durationInput").value.trim();
+
+    if (!name || !goalAmountValue || !durationValue) {
+      alert("Please fill in vault name, goal amount, and duration.");
+      return;
+    }
+
+    if (!connectedWallet) {
+      alert("Please connect your wallet first.");
+      return;
+    }
+
+    try {
+      if (!vaultWise) {
+        await setupContracts();
       }
 
-      vaultMeta[metaKey(connectedWallet, newVaultId)] = {
-        name,
-        durationLabel: durationText,
-      };
-      saveVaultMeta();
+      createVaultBtn.disabled = true;
+      createVaultBtn.innerText = "Creating Vault...";
 
-      if (initialDeposit > 0) {
-        createVaultBtn.innerText = "Approving deposit...";
-        const depositAmount = parseUSDC(initialDeposit);
-        await approveIfNeeded(depositAmount);
+      const goalAmount = ethers.parseUnits(goalAmountValue.toString(), 6);
+      const duration = parseDurationToSeconds(durationValue);
 
-        createVaultBtn.innerText = "Depositing...";
-        const depositTx = await vaultWise.deposit(newVaultId, depositAmount);
-        await depositTx.wait();
-      }
+      const tx = await vaultWise.createVault(goalAmount, duration);
+      await tx.wait();
+
+      alert("Vault created successfully 🎉");
 
       closeCreateVault();
 
-      await loadUserVaults();
-      await updateWalletBalance(connectedWallet);
+      try {
+        await loadUserVaults();
+      } catch (refreshError) {
+        console.log("Vault refresh skipped:", refreshError);
+      }
+
       document.querySelector('[data-page="home"]')?.click();
-      alert("Vault created successfully.");
     } catch (error) {
-      console.error(error);
-      alert(error?.shortMessage || error?.reason || error?.message || "Vault creation failed.");
+      console.error("Create vault error:", error);
+
+      if (error.code === 4001) {
+        alert("Transaction rejected.");
+      } else {
+        alert(
+          error.reason ||
+            error.shortMessage ||
+            error.message ||
+            "Vault creation failed."
+        );
+      }
     } finally {
       createVaultBtn.disabled = false;
       createVaultBtn.innerText = "Create Vault";
@@ -726,62 +513,95 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function depositToVault(vaultId) {
+    if (!connectedWallet || !vaultWise || !usdc) {
+      alert("Connect wallet first.");
+      return;
+    }
+
     const amount = prompt("Enter USDC amount to deposit:");
+
     if (!amount || Number(amount) <= 0) return;
 
     try {
-      await ensureReady();
-      const parsedAmount = parseUSDC(amount);
-      await approveIfNeeded(parsedAmount);
-      const tx = await vaultWise.deposit(vaultId, parsedAmount);
-      await tx.wait();
-      await loadUserVaults();
-      await updateWalletBalance(connectedWallet);
+      const parsedAmount = ethers.parseUnits(amount.toString(), 6);
+
+      const allowance = await usdc.allowance(connectedWallet, VAULTWISE_ADDRESS);
+
+      if (allowance < parsedAmount) {
+        const approveTx = await usdc.approve(VAULTWISE_ADDRESS, parsedAmount);
+        await approveTx.wait();
+      }
+
+      const depositTx = await vaultWise.deposit(vaultId, parsedAmount);
+      await depositTx.wait();
+
       alert("Deposit successful.");
+      await loadUserVaults();
     } catch (error) {
-      console.error(error);
-      alert(error?.shortMessage || error?.reason || error?.message || "Deposit failed.");
+      console.error("Deposit error:", error);
+      alert(error.reason || error.shortMessage || error.message || "Deposit failed.");
     }
   }
 
   async function investVault(vaultId) {
-    if (!confirm("Invest this vault into Aave V3?")) return;
+    if (!connectedWallet || !vaultWise) {
+      alert("Connect wallet first.");
+      return;
+    }
 
     try {
-      await ensureReady();
       const tx = await vaultWise.invest(vaultId);
       await tx.wait();
-      await loadUserVaults();
+
       alert("Vault invested successfully.");
+      await loadUserVaults();
     } catch (error) {
-      console.error(error);
-      alert(error?.shortMessage || error?.reason || error?.message || "Investment failed.");
+      console.error("Invest error:", error);
+      alert(error.reason || error.shortMessage || error.message || "Invest failed.");
     }
   }
 
   async function withdrawFromVault(vaultId) {
-    const amount = prompt("Enter USDC amount to withdraw/request:");
+    if (!connectedWallet || !vaultWise) {
+      alert("Connect wallet first.");
+      return;
+    }
+
+    const amount = prompt("Enter USDC amount to withdraw:");
+
     if (!amount || Number(amount) <= 0) return;
 
     try {
-      await ensureReady();
-      const tx = await vaultWise.withdraw(vaultId, parseUSDC(amount));
+      const parsedAmount = ethers.parseUnits(amount.toString(), 6);
+
+      const tx = await vaultWise.withdraw(vaultId, parsedAmount);
       await tx.wait();
+
+      alert("Withdrawal requested.");
       await loadUserVaults();
-      await updateWalletBalance(connectedWallet);
-      alert("Withdrawal request submitted.");
     } catch (error) {
-      console.error(error);
-      alert(error?.shortMessage || error?.reason || error?.message || "Withdrawal failed.");
+      console.error("Withdraw error:", error);
+      alert(error.reason || error.shortMessage || error.message || "Withdrawal failed.");
     }
   }
 
-  const hasCompletedSetup = localStorage.getItem("vaultwiseSetupComplete") === "true";
+  function openVaultActions(vaultId) {
+    const action = prompt(
+      `Vault #${vaultId}\n\nType one action:\ndeposit\ninvest\nwithdraw`
+    );
 
-  if (username || hasCompletedSetup) {
-    if (username) {
-      setUserUI(username, savedAvatar || getDefaultAvatar(username));
-    }
+    if (!action) return;
+
+    const cleanAction = action.toLowerCase().trim();
+
+    if (cleanAction === "deposit") depositToVault(vaultId);
+    else if (cleanAction === "invest") investVault(vaultId);
+    else if (cleanAction === "withdraw") withdrawFromVault(vaultId);
+    else alert("Invalid action. Type deposit, invest, or withdraw.");
+  }
+
+  if (username) {
+    setUserUI(username, savedAvatar || getDefaultAvatar(username));
     showDashboard();
   } else {
     showLanding();
@@ -790,11 +610,13 @@ document.addEventListener("DOMContentLoaded", () => {
   if (startAppBtn) {
     startAppBtn.addEventListener("click", () => {
       if (landingPage) landingPage.style.display = "none";
-      usernameModal.classList.remove("hidden");
+      if (usernameModal) usernameModal.classList.remove("hidden");
     });
   }
 
-  connectWalletBtns.forEach((btn) => btn.addEventListener("click", connectWallet));
+  connectWalletBtns.forEach((btn) => {
+    btn.addEventListener("click", connectWallet);
+  });
 
   if (walletDisplayBtn) {
     walletDisplayBtn.addEventListener("click", () => {
@@ -805,9 +627,12 @@ document.addEventListener("DOMContentLoaded", () => {
   if (copyWalletBtn) {
     copyWalletBtn.addEventListener("click", async () => {
       if (!connectedWallet) return;
+
       await navigator.clipboard.writeText(connectedWallet);
+
       copyWalletBtn.innerHTML = `<i data-lucide="check"></i> Copied`;
       lucide.createIcons();
+
       setTimeout(() => {
         copyWalletBtn.innerHTML = `<i data-lucide="copy"></i> Copy Address`;
         lucide.createIcons();
@@ -823,7 +648,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   if (saveUsernameBtn) {
-    saveUsernameBtn.addEventListener("click", async () => {
+    saveUsernameBtn.addEventListener("click", () => {
       const name = usernameInput.value.trim();
 
       if (!name) {
@@ -836,61 +661,35 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      saveUsernameBtn.disabled = true;
-      saveUsernameBtn.innerText = "Saving...";
+      username = name;
+      localStorage.setItem("vaultwiseUsername", name);
 
-      try {
-        username = name;
-        localStorage.setItem("vaultwiseUsername", name);
-        localStorage.setItem("vaultwiseSetupComplete", "true");
+      const file = avatarInput.files[0];
 
-        const finishSetup = async (avatarUrl) => {
-          savedAvatar = avatarUrl;
-          localStorage.setItem("vaultwiseAvatar", avatarUrl);
+      if (file) {
+        const reader = new FileReader();
 
-          setUserUI(name, avatarUrl);
+        reader.onload = () => {
+          const avatarData = reader.result;
+
+          localStorage.setItem("vaultwiseAvatar", avatarData);
+          savedAvatar = avatarData;
+
+          setUserUI(name, avatarData);
           usernameModal.classList.add("hidden");
-          if (landingPage) landingPage.style.display = "none";
-          if (appContainer) appContainer.classList.remove("hidden");
-
-          await updateWalletBalance(connectedWallet);
-          await loadUserVaults();
-
-          document.querySelectorAll(".page, .page-section").forEach((page) => {
-            page.classList.add("hidden");
-          });
-          document.getElementById("homePage")?.classList.remove("hidden");
-          document.querySelectorAll(".nav-link").forEach((item) => item.classList.remove("active"));
-          document.querySelectorAll('[data-page="home"]').forEach((item) => item.classList.add("active"));
-
-          lucide.createIcons();
+          showDashboard();
         };
 
-        const file = avatarInput.files[0];
+        reader.readAsDataURL(file);
+      } else {
+        const defaultAvatar = getDefaultAvatar(name);
 
-        if (file) {
-          const reader = new FileReader();
-          reader.onload = async () => {
-            await finishSetup(reader.result);
-            saveUsernameBtn.disabled = false;
-            saveUsernameBtn.innerText = "Continue";
-          };
-          reader.onerror = () => {
-            saveUsernameBtn.disabled = false;
-            saveUsernameBtn.innerText = "Continue";
-            alert("Avatar upload failed. Please try again.");
-          };
-          reader.readAsDataURL(file);
-        } else {
-          await finishSetup(getDefaultAvatar(name));
-          saveUsernameBtn.disabled = false;
-          saveUsernameBtn.innerText = "Continue";
-        }
-      } catch (error) {
-        console.error(error);
-        saveUsernameBtn.disabled = false;
-        saveUsernameBtn.innerText = "Continue";
-        alert(error?.shortMessage || error?.message || "Profile setup failed.");
+        localStorage.setItem("vaultwiseAvatar", defaultAvatar);
+        savedAvatar = defaultAvatar;
+
+        setUserUI(name, defaultAvatar);
+        usernameModal.classList.add("hidden");
+        showDashboard();
       }
     });
   }
@@ -898,6 +697,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (toggleBtn && balanceAmount && balanceChange) {
     toggleBtn.addEventListener("click", () => {
       isBalanceHidden = !isBalanceHidden;
+
       if (isBalanceHidden) {
         balanceAmount.textContent = "****";
         balanceChange.textContent = "****";
@@ -907,11 +707,13 @@ document.addEventListener("DOMContentLoaded", () => {
         balanceChange.textContent = balanceChange.dataset.real;
         toggleBtn.innerHTML = `<i data-lucide="eye"></i>`;
       }
+
       lucide.createIcons();
     });
   }
 
   const navLinks = document.querySelectorAll(".nav-link");
+
   const pages = {
     home: document.getElementById("homePage"),
     save: document.getElementById("savePage"),
@@ -922,25 +724,52 @@ document.addEventListener("DOMContentLoaded", () => {
   navLinks.forEach((link) => {
     link.addEventListener("click", () => {
       const selectedPage = link.dataset.page;
-      navLinks.forEach((item) => item.classList.remove("active"));
-      document.querySelectorAll(`[data-page="${selectedPage}"]`).forEach((item) => item.classList.add("active"));
-      Object.values(pages).forEach((page) => page && page.classList.add("hidden"));
-      if (pages[selectedPage]) pages[selectedPage].classList.remove("hidden");
+
+      navLinks.forEach((item) => {
+        item.classList.remove("active");
+      });
+
+      document.querySelectorAll(`[data-page="${selectedPage}"]`).forEach((item) => {
+        item.classList.add("active");
+      });
+
+      Object.values(pages).forEach((page) => {
+        if (page) page.classList.add("hidden");
+      });
+
+      if (pages[selectedPage]) {
+        pages[selectedPage].classList.remove("hidden");
+      }
+
       lucide.createIcons();
     });
   });
 
-  if (openCreateVaultModal) openCreateVaultModal.addEventListener("click", openCreateVault);
-  if (closeCreateVaultModal) closeCreateVaultModal.addEventListener("click", closeCreateVault);
-  if (cancelCreateVaultBtn) cancelCreateVaultBtn.addEventListener("click", closeCreateVault);
+  if (openCreateVaultModal) {
+    openCreateVaultModal.addEventListener("click", openCreateVault);
+  }
+
+  if (closeCreateVaultModal) {
+    closeCreateVaultModal.addEventListener("click", closeCreateVault);
+  }
+
+  if (cancelCreateVaultBtn) {
+    cancelCreateVaultBtn.addEventListener("click", closeCreateVault);
+  }
+
   if (createVaultModal) {
-    createVaultModal.addEventListener("click", (event) => {
-      if (event.target === createVaultModal) closeCreateVault();
+    createVaultModal.addEventListener("click", (e) => {
+      if (e.target === createVaultModal) {
+        closeCreateVault();
+      }
     });
   }
-  if (createVaultBtn) createVaultBtn.addEventListener("click", createVaultOnChain);
 
-  renderVaults();
+  if (createVaultBtn) {
+    createVaultBtn.addEventListener("click", createVaultOnChain);
+  }
+
+  renderVaults([]);
 
   const transferOverlay = document.getElementById("transferOverlay");
   const transferTitle = document.getElementById("transferTitle");
@@ -961,10 +790,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const copyReceiveAddressBtn = document.getElementById("copyReceiveAddressBtn");
 
   const tokenAssets = [
-    { symbol: "USDC", name: "USD Coin", coinClass: "usdt", icon: "$", balance: "Live", value: "Polygon Amoy" },
-    { symbol: "POL", name: "Polygon", coinClass: "eth", icon: "◆", balance: "Live", value: "Gas token" },
-    { symbol: "ETH", name: "Ethereum", coinClass: "eth", icon: "◆", balance: "Demo", value: "$0.00" },
-    { symbol: "BTC", name: "Bitcoin", coinClass: "btc", icon: "₿", balance: "Demo", value: "$0.00" },
+    { symbol: "USDT", name: "Tether USD", coinClass: "usdt", icon: "₮", balance: "$1,320.7043", value: "$1,320.70" },
+    { symbol: "ETH", name: "Ethereum", coinClass: "eth", icon: "◆", balance: "0.50 ETH", value: "$1,165.64" },
+    { symbol: "ATOM", name: "Cosmos", coinClass: "atom", icon: "✺", balance: "20 ATOM", value: "$39.40" },
+    { symbol: "TON", name: "Ton", coinClass: "ton", icon: "▽", balance: "40 TON", value: "$52.80" },
+    { symbol: "AXL", name: "Axelar", coinClass: "axl", icon: "✖", balance: "100 AXL", value: "$5.92" },
+    { symbol: "BTC", name: "Bitcoin", coinClass: "btc", icon: "₿", balance: "0.02 BTC", value: "$1,566.24" },
   ];
 
   let transferMode = "send";
@@ -984,15 +815,29 @@ document.addEventListener("DOMContentLoaded", () => {
     return `
       <button class="transfer-token-item" data-symbol="${token.symbol}">
         <div class="coin ${token.coinClass}">${token.icon}</div>
-        <div class="token-meta"><h3>${token.symbol}</h3><p>${token.name}</p></div>
-        <div class="token-right"><h4>${token.balance}</h4><p>${token.value}</p></div>
+
+        <div class="token-meta">
+          <h3>${token.symbol}</h3>
+          <p>${token.name}</p>
+        </div>
+
+        <div class="token-right">
+          <h4>${token.balance}</h4>
+          <p>${token.value}</p>
+        </div>
       </button>
     `;
   }
 
   function renderTransferTokens(filter = "") {
     const cleanFilter = filter.toLowerCase().trim();
-    const filteredTokens = tokenAssets.filter((token) => token.symbol.toLowerCase().includes(cleanFilter) || token.name.toLowerCase().includes(cleanFilter));
+
+    const filteredTokens = tokenAssets.filter((token) => {
+      return (
+        token.symbol.toLowerCase().includes(cleanFilter) ||
+        token.name.toLowerCase().includes(cleanFilter)
+      );
+    });
 
     if (filteredTokens.length === 0) {
       transferTokenList.innerHTML = "";
@@ -1002,9 +847,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
     transferEmptyState.classList.add("hidden");
     transferTokenList.innerHTML = filteredTokens.map(fullTokenItemHTML).join("");
+
     document.querySelectorAll(".transfer-token-item").forEach((item) => {
-      item.addEventListener("click", () => selectTransferToken(tokenAssets.find((asset) => asset.symbol === item.dataset.symbol)));
+      item.addEventListener("click", () => {
+        const symbol = item.dataset.symbol;
+        const token = tokenAssets.find((asset) => asset.symbol === symbol);
+        selectTransferToken(token);
+      });
     });
+
     lucide.createIcons();
   }
 
@@ -1012,22 +863,21 @@ document.addEventListener("DOMContentLoaded", () => {
     tokenSelectScreen.classList.add("hidden");
     sendFormScreen.classList.add("hidden");
     receiveScreen.classList.add("hidden");
+
     screen.classList.remove("hidden");
   }
 
   function openTransfer(mode) {
-    if (!connectedWallet) {
-      connectWallet();
-      return;
-    }
-
     transferMode = mode;
     selectedTransferToken = null;
+
     transferTitle.innerText = mode === "send" ? "Send" : "Receive";
     tokenSearchInput.value = "";
+
     transferOverlay.classList.remove("hidden");
     showTransferScreen(tokenSelectScreen);
     renderTransferTokens();
+
     lucide.createIcons();
   }
 
@@ -1040,6 +890,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function selectTransferToken(token) {
     selectedTransferToken = token;
+
     if (transferMode === "send") {
       transferTitle.innerText = `Send ${token.symbol}`;
       sendSelectedToken.innerHTML = tokenCardHTML(token);
@@ -1050,95 +901,152 @@ document.addEventListener("DOMContentLoaded", () => {
       receiveAddressText.innerText = connectedWallet || "Connect wallet first";
       showTransferScreen(receiveScreen);
     }
+
     lucide.createIcons();
   }
 
   function validateSendForm() {
     const address = sendAddressInput.value.trim();
     const amount = Number(sendAmountInput.value);
-    sendNextBtn.disabled = !(ethers.isAddress(address) && amount > 0);
+
+    sendNextBtn.disabled = !(address.length > 10 && amount > 0);
   }
 
-  document.getElementById("sendActionBtn")?.addEventListener("click", () => openTransfer("send"));
-  document.getElementById("receiveActionBtn")?.addEventListener("click", () => openTransfer("receive"));
+  document.getElementById("sendActionBtn")?.addEventListener("click", () => {
+    openTransfer("send");
+  });
+
+  document.getElementById("receiveActionBtn")?.addEventListener("click", () => {
+    openTransfer("receive");
+  });
+
   transferCloseBtn?.addEventListener("click", closeTransfer);
 
   transferBackBtn?.addEventListener("click", () => {
-    if (!tokenSelectScreen.classList.contains("hidden")) return closeTransfer();
+    if (!tokenSelectScreen.classList.contains("hidden")) {
+      closeTransfer();
+      return;
+    }
+
     transferTitle.innerText = transferMode === "send" ? "Send" : "Receive";
     showTransferScreen(tokenSelectScreen);
   });
 
-  tokenSearchInput?.addEventListener("input", () => renderTransferTokens(tokenSearchInput.value));
+  tokenSearchInput?.addEventListener("input", () => {
+    renderTransferTokens(tokenSearchInput.value);
+  });
+
   sendAddressInput?.addEventListener("input", validateSendForm);
   sendAmountInput?.addEventListener("input", validateSendForm);
 
   sendNextBtn?.addEventListener("click", async () => {
     if (!selectedTransferToken) return;
 
+    if (!connectedWallet || !usdc) {
+      alert("Connect wallet first.");
+      return;
+    }
+
+    if (selectedTransferToken.symbol !== "USDT") {
+      alert("Only USDC transfer is connected for this hackathon demo.");
+      return;
+    }
+
     try {
-      await ensureReady();
-      const to = sendAddressInput.value.trim();
-      const amount = sendAmountInput.value;
+      const receiver = sendAddressInput.value.trim();
+      const amount = ethers.parseUnits(sendAmountInput.value, 6);
 
-      if (selectedTransferToken.symbol === "USDC") {
-        const tx = await usdc.transfer(to, parseUSDC(amount));
-        await tx.wait();
-        alert("USDC sent successfully.");
-      } else if (selectedTransferToken.symbol === "POL") {
-        const tx = await signer.sendTransaction({ to, value: ethers.parseEther(amount) });
-        await tx.wait();
-        alert("POL sent successfully.");
-      } else {
-        alert("Only USDC and POL transfers are enabled on this testnet build.");
-      }
+      const tx = await usdc.transfer(receiver, amount);
+      await tx.wait();
 
-      await updateWalletBalance(connectedWallet);
+      alert("Transfer successful.");
       closeTransfer();
+      await updateWalletBalance(connectedWallet);
     } catch (error) {
-      console.error(error);
-      alert(error?.shortMessage || error?.reason || error?.message || "Transfer failed.");
+      console.error("Transfer error:", error);
+      alert(error.reason || error.shortMessage || error.message || "Transfer failed.");
     }
   });
 
   copyReceiveAddressBtn?.addEventListener("click", async () => {
-    if (!connectedWallet) return alert("Connect wallet first.");
+    if (!connectedWallet) {
+      alert("Connect wallet first.");
+      return;
+    }
+
     await navigator.clipboard.writeText(connectedWallet);
     copyReceiveAddressBtn.innerHTML = `<i data-lucide="check"></i>`;
+
     lucide.createIcons();
+
     setTimeout(() => {
       copyReceiveAddressBtn.innerHTML = `<i data-lucide="copy"></i>`;
       lucide.createIcons();
     }, 1200);
   });
 
+  const demoHoldings = {
+    tether: 1320.7043,
+    ethereum: 0.5,
+    cosmos: 20,
+    "the-open-network": 40,
+    axelar: 100,
+    bitcoin: 0.02,
+  };
+
   async function fetchCryptoPrices() {
-    const demoHoldings = { ethereum: 0.5, bitcoin: 0.02 };
     const coinIds = Object.keys(demoHoldings).join(",");
-    const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${coinIds}&order=market_cap_desc&per_page=100&page=1&sparkline=false&price_change_percentage=24h`;
+
+    const url =
+      `https://api.coingecko.com/api/v3/coins/markets` +
+      `?vs_currency=usd` +
+      `&ids=${coinIds}` +
+      `&order=market_cap_desc` +
+      `&per_page=100` +
+      `&page=1` +
+      `&sparkline=false` +
+      `&price_change_percentage=24h`;
 
     try {
       const response = await fetch(url);
-      if (!response.ok) throw new Error("Failed to fetch crypto prices");
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch crypto prices");
+      }
+
       const coins = await response.json();
+
       coins.forEach((coin) => {
         const asset = document.querySelector(`[data-coin="${coin.id}"]`);
         if (!asset) return;
+
         const priceEl = asset.querySelector(".coin-price");
         const changeEl = asset.querySelector(".coin-change");
         const valueEl = asset.querySelector(".coin-value");
+
         const price = coin.current_price;
         const change = coin.price_change_percentage_24h || 0;
         const holding = demoHoldings[coin.id];
         const totalValue = price * holding;
-        priceEl.textContent = `$${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: price < 1 ? 4 : 2 })}`;
+
+        priceEl.textContent = `$${price.toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: price < 1 ? 4 : 2,
+        })}`;
+
         changeEl.textContent = `${change >= 0 ? "+" : ""}${change.toFixed(2)}%`;
+
         changeEl.classList.remove("positive", "negative");
         changeEl.classList.add(change >= 0 ? "positive" : "negative");
-        valueEl.textContent = `$${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+        valueEl.textContent = `$${totalValue.toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}`;
       });
     } catch (error) {
       console.error(error);
+
       document.querySelectorAll(".coin-price").forEach((item) => {
         item.textContent = "Price unavailable";
       });
@@ -1157,8 +1065,8 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       try {
-        await initContracts();
-        await showConnectedUI(accounts[0]);
+        await setupContracts();
+        showConnectedUI(accounts[0]);
       } catch (error) {
         console.error(error);
       }
