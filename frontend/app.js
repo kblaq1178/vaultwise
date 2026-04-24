@@ -188,6 +188,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const openCreateVaultModal = document.getElementById("openCreateVaultModal");
   const closeCreateVaultModal = document.getElementById("closeCreateVaultModal");
   const createVaultBtn = document.getElementById("createVaultBtn");
+  const cancelCreateVaultBtn = document.getElementById("cancelCreateVaultBtn");
 
   let username = localStorage.getItem("vaultwiseUsername");
   let savedAvatar = localStorage.getItem("vaultwiseAvatar");
@@ -494,6 +495,22 @@ document.addEventListener("DOMContentLoaded", () => {
     if (createVaultModal) createVaultModal.classList.remove("hidden");
   }
 
+  function closeCreateVault() {
+    if (!createVaultModal) return;
+
+    createVaultModal.classList.add("hidden");
+
+    const nameInput = document.getElementById("vaultNameInput");
+    const goalInput = document.getElementById("goalAmountInput");
+    const currentInput = document.getElementById("currentAmountInput");
+    const durationInput = document.getElementById("durationInput");
+
+    if (nameInput) nameInput.value = "";
+    if (goalInput) goalInput.value = "";
+    if (currentInput) currentInput.value = "";
+    if (durationInput) durationInput.value = "";
+  }
+
   function renderVaults() {
     if (!vaultGrid) return;
 
@@ -693,11 +710,7 @@ document.addEventListener("DOMContentLoaded", () => {
         await depositTx.wait();
       }
 
-      nameInput.value = "";
-      goalInput.value = "";
-      currentInput.value = "";
-      durationInput.value = "";
-      createVaultModal.classList.add("hidden");
+      closeCreateVault();
 
       await loadUserVaults();
       await updateWalletBalance(connectedWallet);
@@ -763,8 +776,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  if (username) {
-    setUserUI(username, savedAvatar || getDefaultAvatar(username));
+  const hasCompletedSetup = localStorage.getItem("vaultwiseSetupComplete") === "true";
+
+  if (username || hasCompletedSetup) {
+    if (username) {
+      setUserUI(username, savedAvatar || getDefaultAvatar(username));
+    }
     showDashboard();
   } else {
     showLanding();
@@ -808,39 +825,72 @@ document.addEventListener("DOMContentLoaded", () => {
   if (saveUsernameBtn) {
     saveUsernameBtn.addEventListener("click", async () => {
       const name = usernameInput.value.trim();
+
       if (!name) {
         alert("Please enter a username.");
         return;
       }
+
       if (!connectedWallet) {
         alert("Please connect your wallet first.");
         return;
       }
 
-      username = name;
-      localStorage.setItem("vaultwiseUsername", name);
-      const file = avatarInput.files[0];
+      saveUsernameBtn.disabled = true;
+      saveUsernameBtn.innerText = "Saving...";
 
-      if (file) {
-        const reader = new FileReader();
-        reader.onload = async () => {
-          const avatarData = reader.result;
-          localStorage.setItem("vaultwiseAvatar", avatarData);
-          savedAvatar = avatarData;
-          setUserUI(name, avatarData);
+      try {
+        username = name;
+        localStorage.setItem("vaultwiseUsername", name);
+        localStorage.setItem("vaultwiseSetupComplete", "true");
+
+        const finishSetup = async (avatarUrl) => {
+          savedAvatar = avatarUrl;
+          localStorage.setItem("vaultwiseAvatar", avatarUrl);
+
+          setUserUI(name, avatarUrl);
           usernameModal.classList.add("hidden");
-          showDashboard();
+          if (landingPage) landingPage.style.display = "none";
+          if (appContainer) appContainer.classList.remove("hidden");
+
+          await updateWalletBalance(connectedWallet);
           await loadUserVaults();
+
+          document.querySelectorAll(".page, .page-section").forEach((page) => {
+            page.classList.add("hidden");
+          });
+          document.getElementById("homePage")?.classList.remove("hidden");
+          document.querySelectorAll(".nav-link").forEach((item) => item.classList.remove("active"));
+          document.querySelectorAll('[data-page="home"]').forEach((item) => item.classList.add("active"));
+
+          lucide.createIcons();
         };
-        reader.readAsDataURL(file);
-      } else {
-        const defaultAvatar = getDefaultAvatar(name);
-        localStorage.setItem("vaultwiseAvatar", defaultAvatar);
-        savedAvatar = defaultAvatar;
-        setUserUI(name, defaultAvatar);
-        usernameModal.classList.add("hidden");
-        showDashboard();
-        await loadUserVaults();
+
+        const file = avatarInput.files[0];
+
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = async () => {
+            await finishSetup(reader.result);
+            saveUsernameBtn.disabled = false;
+            saveUsernameBtn.innerText = "Continue";
+          };
+          reader.onerror = () => {
+            saveUsernameBtn.disabled = false;
+            saveUsernameBtn.innerText = "Continue";
+            alert("Avatar upload failed. Please try again.");
+          };
+          reader.readAsDataURL(file);
+        } else {
+          await finishSetup(getDefaultAvatar(name));
+          saveUsernameBtn.disabled = false;
+          saveUsernameBtn.innerText = "Continue";
+        }
+      } catch (error) {
+        console.error(error);
+        saveUsernameBtn.disabled = false;
+        saveUsernameBtn.innerText = "Continue";
+        alert(error?.shortMessage || error?.message || "Profile setup failed.");
       }
     });
   }
@@ -881,7 +931,13 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   if (openCreateVaultModal) openCreateVaultModal.addEventListener("click", openCreateVault);
-  if (closeCreateVaultModal) closeCreateVaultModal.addEventListener("click", () => createVaultModal.classList.add("hidden"));
+  if (closeCreateVaultModal) closeCreateVaultModal.addEventListener("click", closeCreateVault);
+  if (cancelCreateVaultBtn) cancelCreateVaultBtn.addEventListener("click", closeCreateVault);
+  if (createVaultModal) {
+    createVaultModal.addEventListener("click", (event) => {
+      if (event.target === createVaultModal) closeCreateVault();
+    });
+  }
   if (createVaultBtn) createVaultBtn.addEventListener("click", createVaultOnChain);
 
   renderVaults();
