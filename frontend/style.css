@@ -1323,3 +1323,28 @@ nav i {
     grid-template-columns: 1fr;
   }
 }
+
+.modal-actions-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.modal-actions-row .modal-action-btn {
+  margin-top: 0;
+}
+
+.modal-cancel-btn {
+  width: 100%;
+  background: #1d1e29;
+  color: #fff;
+  border: 1px solid #343742;
+  padding: 13px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.modal-cancel-btn:hover {
+  background: #242633;
+}
